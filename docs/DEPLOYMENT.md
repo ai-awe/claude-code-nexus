@@ -1,8 +1,408 @@
 # 📦 部署指南
 
-本指南将详细介绍如何将 Claude Code Nexus AI 代理服务部署到 Cloudflare Pages & Workers 生产环境。
+本指南将详细介绍如何将 Claude Code Nexus AI 代理服务部署到不同环境。
 
 > 🤖 **特别说明**: 本项目是一个完整的 AI 代理服务，需要配置 GitHub OAuth、API 密钥加密等特殊环境变量。
+
+## 📋 支持的部署方式
+
+| 部署方式 | 推荐度 | 适用场景 | 系统要求 |
+|---------|-------|----------|----------|
+| [Cloudflare Pages & Workers](#cloudflare-部署) | ⭐⭐⭐⭐⭐ | 生产环境 | 无特殊要求 |
+| [VPS Docker 部署](#vps-docker-部署) | ⭐⭐⭐⭐ | 自建服务器 | Docker支持 |
+| [VPS 原生部署](#vps-原生部署) | ⭐⭐⭐ | 测试环境 | Ubuntu 22.04+ / GLIBC 2.32+ |
+
+## 🐳 VPS Docker 部署 (推荐)
+
+### 系统兼容性
+
+**✅ 已验证兼容的系统：**
+- Ubuntu 18.04+
+- CentOS 7+  
+- Debian 10+
+- 任何支持Docker的Linux发行版
+
+**⚠️ GLIBC版本要求：**
+- Cloudflare Workerd 需要 GLIBC 2.32+
+- Ubuntu 20.04 (GLIBC 2.31) 不支持原生部署
+- **解决方案：使用 Docker 隔离运行环境**
+
+### Docker 快速部署
+
+#### 1. 创建 Docker 配置
+
+在项目根目录创建 `Dockerfile`：
+
+```dockerfile
+# 使用 Node.js 20 Alpine 镜像 (包含 GLIBC 2.35+)
+FROM node:20-alpine
+
+# 安装必要的系统依赖
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    libc6-compat
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制包文件
+COPY package.json pnpm-lock.yaml ./
+
+# 安装 pnpm
+RUN npm install -g pnpm
+
+# 安装依赖
+RUN pnpm install
+
+# 复制源代码
+COPY . .
+
+# 构建项目
+RUN pnpm build:client && pnpm generate:html
+
+# 暴露端口
+EXPOSE 8787
+
+# 启动命令
+CMD ["pnpm", "dev:backend"]
+```
+
+#### 2. 创建 docker-compose.yml
+
+```yaml
+version: '3.8'
+
+services:
+  claude-code-nexus:
+    build: .
+    ports:
+      - "3008:8787"
+    environment:
+      - NODE_ENV=production
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - APP_BASE_URL=${APP_BASE_URL}
+    volumes:
+      - ./.wrangler:/app/.wrangler
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8787/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Caddy 反向代理 (可选)
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+```
+
+#### 3. 配置环境变量
+
+创建 `.env` 文件：
+
+```bash
+# GitHub OAuth 配置
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+
+# 加密密钥 (32字符十六进制)
+ENCRYPTION_KEY=your_generated_32_character_hex_key
+
+# 应用基础 URL
+APP_BASE_URL=https://your-domain.com
+
+# 可选：端口配置
+PORT=8787
+```
+
+#### 4. 创建 Caddy 配置 (可选)
+
+创建 `Caddyfile`：
+
+```caddy
+# 替换为您的实际域名
+your-domain.com {
+    reverse_proxy claude-code-nexus:8787
+    
+    # 健康检查
+    handle /health {
+        reverse_proxy claude-code-nexus:8787
+    }
+    
+    # 静态资源缓存
+    handle /assets/* {
+        reverse_proxy claude-code-nexus:8787
+        header Cache-Control "public, max-age=31536000"
+    }
+    
+    # 日志配置
+    log {
+        output file /var/log/caddy/claude-nexus.log {
+            roll_size 100MiB
+            roll_keep 5
+        }
+    }
+}
+```
+
+#### 5. 启动服务
+
+```bash
+# 构建并启动服务
+docker-compose up -d
+
+# 查看服务状态
+docker-compose ps
+
+# 查看实时日志
+docker-compose logs -f claude-code-nexus
+
+# 测试服务
+curl http://localhost:3008/api/health
+```
+
+### Docker 部署故障排除
+
+#### 构建失败
+
+```bash
+# 清理 Docker 缓存
+docker system prune -a
+
+# 重新构建镜像
+docker-compose build --no-cache
+
+# 查看构建日志
+docker-compose build --progress=plain
+```
+
+#### 服务无法启动
+
+```bash
+# 查看详细日志
+docker-compose logs claude-code-nexus
+
+# 进入容器调试
+docker-compose exec claude-code-nexus sh
+
+# 检查端口占用
+docker-compose ps
+netstat -tlnp | grep 3008
+```
+
+#### GLIBC 兼容性验证
+
+```bash
+# 在容器内检查 GLIBC 版本
+docker-compose exec claude-code-nexus ldd --version
+
+# 应该显示 GLIBC 2.35+ (Alpine Linux)
+```
+
+## 🖥️ VPS 原生部署
+
+> ⚠️ **系统要求**: Ubuntu 22.04+ 或其他支持 GLIBC 2.32+ 的系统
+
+### 系统兼容性检查
+
+```bash
+# 检查 GLIBC 版本
+ldd --version
+
+# 输出示例 (必须 >= 2.32):
+# ldd (Ubuntu GLIBC 2.35-0ubuntu3.4) 2.35
+
+# 检查 Node.js 版本
+node --version  # 需要 >= 20.0.0
+```
+
+### Ubuntu 22.04+ 部署步骤
+
+#### 1. 系统准备
+
+```bash
+# 更新系统
+sudo apt update && sudo apt upgrade -y
+
+# 安装 Node.js 20.x
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# 安装 pnpm
+npm install -g pnpm
+
+# 安装 PM2 (进程管理)
+npm install -g pm2
+
+# 安装 Nginx/Caddy (反向代理)
+sudo apt install -y nginx
+# 或者
+sudo apt install -y caddy
+```
+
+#### 2. 项目部署
+
+```bash
+# 克隆项目
+git clone https://github.com/your-username/claude-code-nexus.git
+cd claude-code-nexus
+
+# 安装依赖
+pnpm install
+
+# 配置环境变量
+cp env.example .env
+nano .env  # 填入实际配置
+
+# 构建项目
+pnpm build:client
+pnpm generate:html
+
+# 初始化数据库
+pnpm db:migrate
+```
+
+#### 3. 进程管理
+
+使用 PM2 管理进程：
+
+```bash
+# 创建 PM2 配置文件
+cat > ecosystem.config.js << 'EOF'
+module.exports = {
+  apps: [{
+    name: 'claude-code-nexus',
+    script: 'pnpm',
+    args: 'dev:backend',
+    cwd: '/path/to/claude-code-nexus',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 8787
+    },
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_file: './logs/combined.log',
+    time: true
+  }]
+};
+EOF
+
+# 启动服务
+pm2 start ecosystem.config.js
+
+# 设置开机自启
+pm2 startup
+pm2 save
+```
+
+#### 4. 反向代理配置
+
+**Nginx 配置示例：**
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+    
+    location / {
+        proxy_pass http://localhost:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+}
+```
+
+**Caddy 配置示例：**
+
+```caddy
+your-domain.com {
+    reverse_proxy localhost:8787
+    
+    log {
+        output file /var/log/caddy/claude-nexus.log {
+            roll_size 100MiB
+            roll_keep 5
+        }
+    }
+}
+```
+
+### VPS 原生部署故障排除
+
+#### GLIBC 兼容性问题
+
+**问题症状：**
+```bash
+/lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.32' not found
+/lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.33' not found
+```
+
+**解决方案：**
+
+1. **升级系统到 Ubuntu 22.04+**
+```bash
+# 检查当前系统版本
+lsb_release -a
+
+# 升级到 Ubuntu 22.04 (需要重新配置服务器)
+sudo do-release-upgrade
+```
+
+2. **使用 Docker 部署 (推荐)**
+```bash
+# 切换到 Docker 部署方式
+# 参考上面的 Docker 部署章节
+```
+
+3. **手动升级 GLIBC (不推荐，风险较高)**
+```bash
+# ⚠️ 警告：手动升级 GLIBC 可能导致系统不稳定
+# 建议使用 Docker 替代
+```
+
+#### Node.js 版本问题
+
+```bash
+# 卸载旧版本 Node.js
+sudo apt remove nodejs npm
+
+# 安装 Node.js 20.x
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# 验证版本
+node --version  # 应该显示 v20.x.x
+```
+
+## 🌐 Cloudflare 部署
 
 ## 🚀 部署前准备
 

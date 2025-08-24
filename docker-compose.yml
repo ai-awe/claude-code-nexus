@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  claude-code-nexus:
+    build:
+      context: .
+      dockerfile: Dockerfile.ubuntu
+    container_name: claude-code-nexus
+    ports:
+      - "3009:8787"  # 使用 3009 端口避免冲突
+    environment:
+      - NODE_ENV=production
+      - GITHUB_CLIENT_ID=Ov23liTQVwbesFBcFDVx
+      - GITHUB_CLIENT_SECRET=b6af1a90d3f6efe3c8dfc0ad67b92617dd039bc3
+      - ENCRYPTION_KEY=32characterencryptionkey12345678
+      - APP_BASE_URL=https://claudeapi.satoshitech.xyz
+      - PORT=8787
+    volumes:
+      - ./.wrangler:/app/.wrangler
+    restart: unless-stopped
+    networks:
+      - claude-network
+
+networks:
+  claude-network:
+    driver: bridge
