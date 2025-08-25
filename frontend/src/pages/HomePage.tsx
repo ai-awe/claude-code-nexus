@@ -145,7 +145,7 @@ const HomePage = () => {
                   {`
 # 使用我们的代理
 export ANTHROPIC_API_KEY="ak-your-nexus-key"
-export ANTHROPIC_BASE_URL="https://claude.nekro.ai"
+export ANTHROPIC_BASE_URL="https://claudeapi-1.satoshitech.xyz"
 
 # 现在 Claude Code 会使用您的 API 服务！
 claude`}

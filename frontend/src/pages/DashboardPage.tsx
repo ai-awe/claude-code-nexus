@@ -792,11 +792,11 @@ claude --version`}</code>
                         fontSize: "0.75rem",
                       }}
                     >
-                      https://claude.nekro.ai
+                      https://claudeapi-1.satoshitech.xyz
                     </Typography>
                     <IconButton
                       size="small"
-                      onClick={() => navigator.clipboard.writeText("https://claude.nekro.ai")}
+                      onClick={() => navigator.clipboard.writeText("https://claudeapi-1.satoshitech.xyz")}
                       title="复制代理地址"
                     >
                       <CopyIcon fontSize="small" />
@@ -825,7 +825,7 @@ claude --version`}</code>
             >
               <code>{`# 如果需要在终端中自动使用配置，可以以下内容添加到 \`.bashrc\` 或 \`.zshrc\` 中
 export ANTHROPIC_AUTH_TOKEN="${user?.apiKey || "ak-your-api-key"}"
-export ANTHROPIC_BASE_URL="https://claude.nekro.ai"
+export ANTHROPIC_BASE_URL="https://claudeapi-1.satoshitech.xyz"
 
 # 运行 Claude Code
 claude`}</code>

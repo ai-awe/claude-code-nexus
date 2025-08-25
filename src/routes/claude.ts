@@ -4,7 +4,7 @@ import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import { users } from "../db/schema";
 import { ClaudeRequestSchema } from "@common/validators/claude.schema";
 import { decryptApiKey } from "../utils/encryption";
-import { convertClaudeToOpenAI, convertOpenAIToClaude, StreamConverter } from "../utils/claudeConverter";
+import { convertClaudeToOpenAI, convertOpenAIToClaude, StreamConverter, convertClaudeToGemini, convertGeminiToClaude } from "../utils/claudeConverter";
 import { ModelMappingService } from "../services/modelMappingService";
 import type { Bindings } from "../types";
 import * as drizzleSchema from "../db/schema";
@@ -209,18 +209,36 @@ claude.openapi(messagesRoute, async (c: any) => {
   );
 
   // 4. Convert and forward request
-  const openAIRequest = convertClaudeToOpenAI(claudeRequest, targetModel);
+  const isGeminiFormat = baseUrl.includes("/gemini/v1beta/models");
+  
+  let targetUrl: string;
+  let requestBody: any;
+  let headers: any;
 
-  // 修正：严格以用户提供的baseUrl为基准，直接拼接路径
-  const targetUrl = baseUrl.endsWith("/") ? `${baseUrl}chat/completions` : `${baseUrl}/chat/completions`;
+  if (isGeminiFormat) {
+    // Gemini 原生格式
+    const geminiRequest = convertClaudeToGemini(claudeRequest, targetModel);
+    targetUrl = baseUrl.endsWith("/") ? `${baseUrl}${targetModel}:generateContent` : `${baseUrl}/${targetModel}:generateContent`;
+    requestBody = geminiRequest;
+    headers = {
+      "Content-Type": "application/json",
+      "x-goog-api-key": targetApiKey,
+    };
+  } else {
+    // OpenAI 格式
+    const openAIRequest = convertClaudeToOpenAI(claudeRequest, targetModel);
+    targetUrl = baseUrl.endsWith("/") ? `${baseUrl}chat/completions` : `${baseUrl}/chat/completions`;
+    requestBody = openAIRequest;
+    headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${targetApiKey}`,
+    };
+  }
 
   const res = await fetch(targetUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${targetApiKey}`,
-    },
-    body: JSON.stringify(openAIRequest),
+    headers,
+    body: JSON.stringify(requestBody),
   });
 
   if (!res.ok) {
@@ -235,8 +253,14 @@ claude.openapi(messagesRoute, async (c: any) => {
     return handleStreamingResponse(c, res, claudeRequest.model, inputLength, user.username);
   } else {
     // Non-streaming response handling
-    const openAIResponse = await res.json();
-    const claudeResponse = convertOpenAIToClaude(openAIResponse, claudeRequest.model);
+    const apiResponse = await res.json();
+    let claudeResponse;
+    
+    if (isGeminiFormat) {
+      claudeResponse = convertGeminiToClaude(apiResponse, claudeRequest.model);
+    } else {
+      claudeResponse = convertOpenAIToClaude(apiResponse, claudeRequest.model);
+    }
 
     // 计算输出字符长度
     const outputLength = claudeResponse.content?.[0]?.text?.length || 0;

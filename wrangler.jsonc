@@ -31,15 +31,18 @@
         {
           "binding": "DB",
           "database_name": "claude-code-nexus",
-          "database_id": "18df19cb-8329-4911-9c02-fffe47d65c7b",
+          "database_id": "905d7576-573a-4916-89f2-d11cdce90023",
           "migrations_dir": "drizzle"
         }
       ],
       "vars": {
         "NODE_ENV": "production",
         "VITE_PORT": "5173",
-        "APP_BASE_URL": "https://claude.nekro.ai"
-      }
+        "APP_BASE_URL": "https://claudeapi-1.satoshitech.xyz"
+      },
+      "routes": [
+        "claudeapi-1.satoshitech.xyz/*"
+      ]
     }
   }
 }

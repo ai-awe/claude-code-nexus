@@ -23,14 +23,23 @@ interface AuthResponse {
 
 // API 函数
 const authApi = {
-  // 获取 GitHub OAuth 登录 URL
-  getLoginUrl: async (): Promise<{ authUrl: string; state: string }> => {
-    const response = await fetch("/api/auth/github");
-    const data: any = await response.json();
-    if (!data.success) {
-      throw new Error(data.message);
+  // 获取GitHub OAuth登录URL并跳转
+  redirectToLogin: async (): Promise<void> => {
+    if (isBrowser) {
+      try {
+        const response = await fetch("/api/auth/github");
+        const data = await response.json();
+        if (data.success && data.data.authUrl) {
+          window.location.href = data.data.authUrl;
+        } else {
+          throw new Error(data.message || "获取登录URL失败");
+        }
+      } catch (error) {
+        console.error("登录跳转失败:", error);
+        // 如果API调用失败，直接跳转到GitHub
+        window.location.href = "/api/auth/github";
+      }
     }
-    return data.data;
   },
 
   // 获取当前用户信息
@@ -111,15 +120,9 @@ export function useAuth() {
     refetchOnReconnect: false,
   });
 
-  // 获取登录 URL
+  // 执行登录重定向
   const loginMutation = useMutation({
-    mutationFn: authApi.getLoginUrl,
-    onSuccess: (data) => {
-      // 跳转到 GitHub 授权页面
-      if (isBrowser) {
-        window.location.href = data.authUrl;
-      }
-    },
+    mutationFn: authApi.redirectToLogin,
   });
 
   // 登出

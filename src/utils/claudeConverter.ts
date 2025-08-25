@@ -20,6 +20,68 @@ type ClaudeContent = z.infer<typeof ClaudeContentSchema>;
 type OpenAIMessage = z.infer<typeof OpenAIMessageSchema>;
 
 /**
+ * 将 Claude API 请求转换为 Gemini API 请求
+ */
+export function convertClaudeToGemini(claudeRequest: ClaudeRequest, targetModel: string): any {
+  const contents = claudeRequest.messages.map((message: any) => {
+    let text = "";
+    if (typeof message.content === "string") {
+      text = message.content;
+    } else if (Array.isArray(message.content)) {
+      text = message.content
+        .filter((content: any) => content.type === "text")
+        .map((content: any) => content.text)
+        .join("");
+    }
+
+    return {
+      role: message.role === "assistant" ? "model" : "user",
+      parts: [{ text }]
+    };
+  });
+
+  return {
+    contents,
+    generationConfig: {
+      temperature: claudeRequest.temperature || 0.7,
+      topP: claudeRequest.top_p || 0.9,
+      maxOutputTokens: claudeRequest.max_tokens || 1000,
+    }
+  };
+}
+
+/**
+ * 将 Gemini API 响应转换为 Claude API 响应
+ */
+export function convertGeminiToClaude(geminiResponse: any, model: string): ClaudeResponse {
+  const candidate = geminiResponse.candidates?.[0];
+  if (!candidate) {
+    throw new Error("No candidate found in Gemini response");
+  }
+
+  const content = candidate.content?.parts?.[0]?.text || "";
+  
+  return {
+    id: `msg_${Date.now()}`,
+    type: "message",
+    role: "assistant",
+    content: [
+      {
+        type: "text",
+        text: content,
+      },
+    ],
+    model: model,
+    stop_reason: candidate.finishReason === "STOP" ? "end_turn" : "max_tokens",
+    stop_sequence: null,
+    usage: {
+      input_tokens: geminiResponse.usageMetadata?.promptTokenCount || 0,
+      output_tokens: geminiResponse.usageMetadata?.candidatesTokenCount || 0,
+    },
+  };
+}
+
+/**
  * 将 Claude API 请求转换为 OpenAI API 请求
  */
 export function convertClaudeToOpenAI(claudeRequest: ClaudeRequest, targetModel: string): OpenAIRequest {

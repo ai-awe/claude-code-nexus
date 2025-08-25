@@ -292,7 +292,11 @@ auth
             .returning()
         )[0];
       } else {
-        // 创建新用户
+        // 创建新用户，并设置默认的Gemini API配置
+        const { encryptApiKey } = await import("../utils/encryption");
+        const defaultApiKey = "sk-gemini-balance-2025";
+        const encryptedApiKey = await encryptApiKey(defaultApiKey, c.env.ENCRYPTION_KEY);
+        
         user = (
           await db
             .insert(users)
@@ -302,6 +306,8 @@ auth
               email: githubUser.email || null,
               avatarUrl: githubUser.avatar_url || null,
               apiKey: generateUserApiKey(),
+              encryptedProviderApiKey: encryptedApiKey,
+              providerBaseUrl: "https://gemini.satoshitech.xyz/gemini/v1beta/models",
             })
             .returning()
         )[0];
